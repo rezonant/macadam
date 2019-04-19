@@ -49,7 +49,7 @@ HRESULT captureThreadsafe::VideoInputFrameArrived(
   napi_status status, hangover;
   status = napi_acquire_threadsafe_function(tsFn);
   if (status != napi_ok) {
-    printf("DEBUG: Failed to acquire NAPI threadsafe function on capture.");
+    printf("DEBUG: Failed to acquire NAPI threadsafe function on capture, status=%d.\n", status);
     return E_FAIL;
   }
 
@@ -57,17 +57,23 @@ HRESULT captureThreadsafe::VideoInputFrameArrived(
   if (audioPacket != nullptr) {
     audioPacket->AddRef();
   }
+  
   frameData* data = (frameData*) malloc(sizeof(frameData));
+  data->rgbaAuxiliaryBuf = NULL;
   data->videoFrame = videoFrame;
   data->audioPacket = audioPacket;
+
   hangover = napi_call_threadsafe_function(tsFn, data, napi_tsfn_nonblocking);
   if (hangover != napi_ok) {
-    printf("DEBUG: Failed to call NAPI threadsafe function on capture.");
+    if (hangover == napi_queue_full)
+      printf("WARNING: Frame overrun: Dropped frame as frame queue is full! status=%d.\n", hangover);
+    else
+      printf("DEBUG: Failed to call NAPI threadsafe function on capture, status=%d.\n", hangover);
   }
 
   status = napi_release_threadsafe_function(tsFn, napi_tsfn_release);
   if (status != napi_ok) {
-    printf("DEBUG: Failed to acquire NAPI threadsafe function on capture.");
+    printf("DEBUG: Failed to release NAPI threadsafe function on capture, status=%d.\n", status);
     return E_FAIL;
   }
 
@@ -91,11 +97,18 @@ void finalizeCaptureCarrier(napi_env env, void* finalize_data, void* finalize_hi
 void finalizeVideoBuffer(napi_env env, void* finalize_data, void* finalize_hint) {
   napi_status status;
   int64_t externalMemory;
-  IDeckLinkVideoInputFrame* video = (IDeckLinkVideoInputFrame*) finalize_hint;
+  frameData *frame = (frameData*) finalize_hint;
+  IDeckLinkVideoInputFrame* video = frame->videoFrame;
   status = napi_adjust_external_memory(env, -video->GetRowBytes()*video->GetHeight(),
     &externalMemory);
   FLOATING_STATUS;
   video->Release();
+
+  if (frame->rgbaAuxiliaryBuf) {
+    free(frame->rgbaAuxiliaryBuf);
+    frame->rgbaAuxiliaryBuf = NULL;
+  }
+
   // printf("Releasing video frame - ext mem now %li\n", externalMemory);
 }
 
@@ -692,8 +705,64 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
       c->status = MACADAM_CALL_FAILURE;
       REJECT_BAIL;
     }
-    c->status = napi_create_external_buffer(env, rowBytes*height, bytes,
-      finalizeVideoBuffer, frame->videoFrame, &param);
+
+    // Convert the color format
+
+    int32_t bufferSize = rowBytes * height;
+
+    if (crts->pixelFormat == bmdFormat8BitBGRA) {
+      byte *rawData = (byte*)bytes;
+      for (int i = 0, max = bufferSize; i < max; i += 4) {
+        byte blue = rawData[i];
+        rawData[i + 0]     = rawData[i + 2];
+        rawData[i + 2]     = blue;
+        rawData[i + 3] = 255;
+      }
+    } else if (crts->pixelFormat == bmdFormat8BitARGB) {
+      byte *rawData = (byte*)bytes;
+      for (int i = 0, max = bufferSize; i < max; i += 4) {
+        //byte alpha = rawData[i];
+        rawData[i + 0]     = rawData[i + 1];
+        rawData[i + 1]     = rawData[i + 2];
+        rawData[i + 2]     = rawData[i + 3];
+        rawData[i + 3]     = 255;
+      }
+    } else if (crts->pixelFormat == bmdFormat8BitYUV) {
+      byte *rawData = (byte*)bytes;
+      byte *rgbaData = (byte*)malloc(frame->videoFrame->GetWidth() * frame->videoFrame->GetHeight() * 4);
+
+      for (int i = 0, max = bufferSize; i < max; i += 4) {
+        byte Cb = rawData[i + 0];
+        byte Y0 = rawData[i + 1];
+        byte Cr = rawData[i + 2];
+        byte Y1 = rawData[i + 3];
+
+        int R0 = (int) (Y0 + 1.40200 * (Cr - 0x80));
+        int G0 = (int) (Y0 - 0.34414 * (Cb - 0x80) - 0.71414 * (Cr - 0x80));
+        int B0 = (int) (Y0 + 1.77200 * (Cb - 0x80));
+
+        int R1 = (int) (Y1 + 1.40200 * (Cr - 0x80));
+        int G1 = (int) (Y1 - 0.34414 * (Cb - 0x80) - 0.71414 * (Cr - 0x80));
+        int B1 = (int) (Y1 + 1.77200 * (Cb - 0x80));
+
+        int rgbaIndex = i * 2;
+        rgbaData[rgbaIndex + 0] = R0;
+        rgbaData[rgbaIndex + 1] = G0;
+        rgbaData[rgbaIndex + 2] = B0;
+        rgbaData[rgbaIndex + 3] = 255;
+        rgbaData[rgbaIndex + 4] = R1;
+        rgbaData[rgbaIndex + 5] = G1;
+        rgbaData[rgbaIndex + 6] = B1;
+        rgbaData[rgbaIndex + 7] = 255;
+      }
+
+      bytes = rgbaData;
+      bufferSize = frame->videoFrame->GetWidth() * 4;
+      frame->rgbaAuxiliaryBuf = rgbaData;
+    }
+
+    c->status = napi_create_external_buffer(env, bufferSize, bytes,
+      finalizeVideoBuffer, frame, &param);
     REJECT_BAIL;
     c->status = napi_set_named_property(env, obj, "data", param);
     REJECT_BAIL;

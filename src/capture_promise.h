@@ -112,6 +112,7 @@ struct captureThreadsafe : IDeckLinkInputCallback {
 struct frameData {
   IDeckLinkVideoInputFrame* videoFrame;
   IDeckLinkAudioInputPacket* audioPacket;
+  byte* rgbaAuxiliaryBuf;
 };
 
 struct audioData {
