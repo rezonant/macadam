@@ -630,16 +630,55 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
   IDeckLinkTimecode* timecode;
   audioData* audioFinalizeData;
   HRESULT hresult;
-  // TODO : Add support for ancillary data
-
-  //printf("Received an input frame %lix%li\n", frame->videoFrame->GetWidth(),
-  //  frame->videoFrame->GetHeight());
 
   if (!crts->framePromises.empty()) {
     c = crts->framePromises.front();
 
     c->status = napi_create_object(env, &result);
     REJECT_BAIL;
+
+    // Ancillary data
+
+    IDeckLinkVideoFrameAncillaryPackets *ancillary;
+    if (frame->videoFrame->QueryInterface(IID_IDeckLinkVideoFrameAncillaryPackets, (void**)&ancillary) == S_OK) {
+
+      IDeckLinkAncillaryPacketIterator *iterator;
+      if (ancillary->GetPacketIterator(&iterator) == S_OK) {
+        IDeckLinkAncillaryPacket *packet;
+        napi_value packets_array;
+        int packetSlot = 0;
+
+        napi_create_array(env, &packets_array);
+
+        while (iterator->Next(&packet) == S_OK) {
+          napi_value js_packet, line_number, did, data_stream_index, sdid, packet_data;
+          unsigned int packetSize;
+          byte *packetData;
+          
+          c->status = napi_create_int64(env, packet->GetLineNumber(), &line_number);                  REJECT_BAIL;
+          c->status = napi_create_int32(env, packet->GetDID(), &did);                                 REJECT_BAIL;
+          c->status = napi_create_int32(env, packet->GetDataStreamIndex(), &data_stream_index);       REJECT_BAIL;
+          c->status = napi_create_int32(env, packet->GetSDID(), &sdid);                               REJECT_BAIL;
+          c->status = packet->GetBytes(bmdAncillaryPacketFormatUInt8, 
+                                        (void**)&packetData, &packetSize);                            REJECT_BAIL;
+          c->status = napi_create_buffer_copy(env, packetSize, packetData, NULL, &packet_data);       REJECT_BAIL;
+          c->status = napi_create_object(env, &js_packet);                                            REJECT_BAIL;
+          c->status = napi_set_named_property(env, js_packet, "lineNumber", line_number);             REJECT_BAIL;
+          c->status = napi_set_named_property(env, js_packet, "did", did);                            REJECT_BAIL;
+          c->status = napi_set_named_property(env, js_packet, "sdid", sdid);                          REJECT_BAIL;
+          c->status = napi_set_named_property(env, js_packet, "dataStreamIndex", data_stream_index);  REJECT_BAIL;
+          c->status = napi_set_named_property(env, js_packet, "data", packet_data);                   REJECT_BAIL;
+          c->status = napi_set_element(env, packets_array, packetSlot++, js_packet);                  REJECT_BAIL;
+        }
+
+        c->status = napi_set_named_property(env, result, "ancillary", packets_array);                 REJECT_BAIL;
+      }
+
+      ancillary->Release();
+    }
+
+
+
     c->status = napi_create_string_utf8(env, "frame", NAPI_AUTO_LENGTH, &param);
     REJECT_BAIL;
     c->status = napi_set_named_property(env, result, "type", param);
