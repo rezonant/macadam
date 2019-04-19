@@ -1,4 +1,9 @@
-# Macadam
+# @rezonant/macadam
+
+This is my integration branch for the features I am working on within the excellent [`macadam` library](https://github.com/Streampunk/macadam).
+For individual efforts, please see `feat/*` branches.
+
+---
 
 Bindings to link [Node.js](http://nodejs.org/) and the Blackmagic Desktop Video devices, enabling asynchronous capture and playback to and from [Blackmagic Design](https://www.blackmagicdesign.com/) devices via a simple Javascript API. Keying is supported where it is available on the device.
 
