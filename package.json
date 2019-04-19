@@ -1,5 +1,5 @@
 {
-  "name": "macadam",
+  "name": "@rezonant/macadam",
   "version": "2.0.9",
   "description": "Async node.js interface to Blackmagic Design capture and playback devices.",
   "main": "index.js",
@@ -13,7 +13,8 @@
     "sound"
   ],
   "scripts": {
-    "install": "node-gyp rebuild",
+    "install": "npm run build",
+    "build": "node-gyp rebuild",
     "test": "tape test/*Spec.js",
     "lint": "eslint index.js **/*.js"
   },
