@@ -673,7 +673,7 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
           c->status = napi_create_int32(env, packet->GetDataStreamIndex(), &data_stream_index);       REJECT_BAIL;
           c->status = napi_create_int32(env, packet->GetSDID(), &sdid);                               REJECT_BAIL;
           c->status = packet->GetBytes(bmdAncillaryPacketFormatUInt8, 
-                                        (void**)&packetData, &packetSize);                            REJECT_BAIL;
+                                        (const void**)&packetData, &packetSize);                            REJECT_BAIL;
           c->status = napi_create_buffer_copy(env, packetSize, packetData, NULL, &packet_data);       REJECT_BAIL;
           c->status = napi_create_object(env, &js_packet);                                            REJECT_BAIL;
           c->status = napi_set_named_property(env, js_packet, "lineNumber", line_number);             REJECT_BAIL;
@@ -687,6 +687,7 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
         c->status = napi_set_named_property(env, result, "ancillary", packets_array);                 REJECT_BAIL;
       }
 
+      iterator->Release();
       ancillary->Release();
     }
 
