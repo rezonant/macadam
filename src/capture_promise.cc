@@ -674,6 +674,7 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
         c->status = napi_set_named_property(env, result, "ancillary", packets_array);                 REJECT_BAIL;
       }
 
+      iterator->Release();
       ancillary->Release();
     }
 
