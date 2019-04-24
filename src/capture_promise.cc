@@ -110,6 +110,8 @@ void finalizeVideoBuffer(napi_env env, void* finalize_data, void* finalize_hint)
   }
 
   // printf("Releasing video frame - ext mem now %li\n", externalMemory);
+  
+  free(frame);
 }
 
 void finalizeAudioPacket(napi_env env, void* finalize_data, void* finalize_hint) {
@@ -924,7 +926,6 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
 
 bail:
   if (!crts->framePromises.empty()) crts->framePromises.pop();
-  free(frame);
 
   return;
 }
