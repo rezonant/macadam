@@ -700,8 +700,6 @@ void videoFormatChangeResolver(napi_env env, napi_value func, void *context, voi
   BMDDetectedVideoInputFormatFlags detectedSignalFlags = formatChangeEvent->detectedSignalFlags;
   delete formatChangeEvent;
 
-  HRESULT hresult;
-
   // Create the event object
 
   napi_value node_event, param;

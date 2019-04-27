@@ -1437,20 +1437,9 @@ napi_status queryOutputDisplayModes(napi_env env, IDeckLink* deckLink, napi_valu
   IDeckLinkDisplayMode* displayMode = nullptr;
   HRESULT hresult;
   napi_status status = napi_ok;
-  napi_value modes, modeobj, item, itemPart;
-  uint32_t modeIndex = 0, partIndex = 0;
-
-  #if defined(WIN32) || defined(__APPLE__)
-  char modeName[64];
-  #else
-  char * modeName;
-  #endif
-  int modeWidth;
-  int	modeHeight;
-  BMDTimeValue frameRateDuration;
-  BMDTimeScale frameRateScale;
+  napi_value modes;
+  uint32_t modeIndex = 0;
   int	pixelFormatIndex = 0; // index into the gKnownPixelFormats / gKnownFormatNames arrays
-  BMDDisplayModeSupport	displayModeSupport;
 
   status = napi_create_array(env, &modes);
   CHECK_BAIL;
@@ -1467,7 +1456,7 @@ napi_status queryOutputDisplayModes(napi_env env, IDeckLink* deckLink, napi_valu
 
   // List all supported output display modes
   while (displayModeIterator->Next(&displayMode) == S_OK) {
-
+    napi_value modeobj;
     status = serializeDisplayMode(env, deckLinkIO, displayMode, &modeobj);
     CHECK_BAIL;
 

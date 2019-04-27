@@ -181,7 +181,7 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
   long modeHeight;
   BMDTimeValue frameRateDuration;
   BMDTimeScale frameRateScale;
-  napi_value modes, modeobj, item, itemPart;
+  napi_value modeobj, item, itemPart;
   uint32_t modeIndex = 0, partIndex = 0;
   int	pixelFormatIndex = 0; // index into the gKnownPixelFormats / gKnownFormatNames arrays
   BMDDisplayModeSupport	displayModeSupport;
