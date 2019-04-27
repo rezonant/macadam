@@ -20,14 +20,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Streampunk/macadam.git"
+    "url": "git+https://github.com/rezonant/macadam.git"
   },
   "author": "Streampunk Media Ltd",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/Streampunk/macadam/issues"
+    "url": "https://github.com/rezonant/macadam/issues"
   },
-  "homepage": "https://github.com/Streampunk/macadam#readme",
+  "homepage": "https://github.com/rezonant/macadam#readme",
   "dependencies": {
     "bindings": "^1.2.1",
     "highland": "^2.11.1",
