@@ -5,7 +5,7 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "decklink/Win/include",
-                "C:\\Users\\Liam\\.node-gyp\\11.14.0\\include\\node"
+                "C:\\Users\\Liam\\.node-gyp\\10.15.3\\include\\node"
             ],
             "defines": [
                 "_DEBUG",
