@@ -60,7 +60,7 @@ HRESULT captureThreadsafe::VideoInputFrameArrived(
   }
   
   frameData* data = (frameData*) malloc(sizeof(frameData));
-  data->rgbaAuxiliaryBuf = NULL;
+  data->rgbaAuxiliaryBuf = nullptr;
   data->videoFrame = videoFrame;
   data->audioPacket = audioPacket;
 
