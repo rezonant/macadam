@@ -47,6 +47,7 @@ napi_status checkArgs(napi_env env, napi_callback_info info, char* methodName,
 #define MACADAM_NO_INPUT 4002
 #define MACADAM_CALL_FAILURE 4003
 #define MACADAM_NO_CONVERESION 4004
+#define MACADAM_NO_CONVERSION 4004
 #define MACADAM_MODE_NOT_SUPPORTED 4005
 #define MACADAM_INVALID_ARGS 4006
 #define MACADAM_ACCESS_DENIED 4007
@@ -115,5 +116,7 @@ enum _MacadamConfigType {
 extern const BMDDeckLinkConfigurationID knownConfigValues[];
 extern const char* knownConfigNames[];
 extern const MacadamConfigType knownConfigTypes[];
+
+napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDeckLinkDisplayMode *displayMode, napi_value *result);
 
 #endif // MACADAM_UTIL_H

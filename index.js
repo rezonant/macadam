@@ -789,6 +789,10 @@ var macadam = {
   bmdVideoOutputHardwareAnamorphic149To1080iUpconversion : bmCodeToInt('u41i'), // Simultaneous SD and up-converted anamorphic widescreen aspect ratio 14:9 to 1080i.
   bmdVideoOutputHardwarePillarbox720pUpconversion        : bmCodeToInt('up7p'), // Simultaneous SD and up-converted pillarbox 720p
   bmdVideoOutputHardwarePillarbox1080iUpconversion       : bmCodeToInt('up1i'), // Simultaneous SD and up-converted pillarbox 1080i
+  // BMDVideoInputFlags
+  bmdVideoInputFlagDefault                               : 0,
+  bmdVideoInputEnableFormatDetection                     : ( 1 << 0 ),
+  bmdVideoInputDualStream3D                              : ( 1 << 1 ),
   // BMDVideoInputConversionMode
   bmdNoVideoInputConversion                       : bmCodeToInt('none'), // No video input conversion
   bmdVideoInputLetterboxDownconversionFromHD1080  : bmCodeToInt('10lb'), // HD1080 to SD video input down conversion
@@ -828,6 +832,15 @@ var macadam = {
   // BMDDuplexMode
   bmdDuplexModeFull : bmCodeToInt('fdup'), // Configure this sub-device to use two connectors (full-duplex).
   bmdDuplexModeHalf : bmCodeToInt('hdup'), // Configure this sub-device to use a single connector (half-duplex).
+  // BMDVideoInputFormatChangedEvents
+  bmdVideoInputDisplayModeChanged : (1 << 0),
+  bmdVideoInputFieldDominanceChanged	: ( 1 << 1 ),
+  bmdVideoInputColorspaceChanged	: ( 1 << 2 ),
+  // BMDDetectedVideoInputFormatFlags
+  bmdDetectedVideoInputYCbCr422	: ( 1 << 0 ),
+  bmdDetectedVideoInputRGB444	: ( 1 << 1 ),
+  bmdDetectedVideoInputDualStream3D	: ( 1 << 2 ),
+
   // Convert to and from Black Magic codes.
   intToBMCode : intToBMCode,
   bmCodeToInt : bmCodeToInt, //

@@ -21,6 +21,17 @@
 #include "macadam_util.h"
 #include "node_api.h"
 
+#ifdef WIN32
+#include <tchar.h>
+#include <conio.h>
+#include <objbase.h>		// Necessary for COM
+#include <comdef.h>
+#endif
+
+#ifdef __APPLE__
+#include <CoreFoundation/CFString.h>
+#endif
+
 napi_status checkStatus(napi_env env, napi_status status,
   const char* file, uint32_t line) {
 
@@ -156,4 +167,126 @@ napi_value nop(napi_env env, napi_callback_info info) {
   status = napi_get_undefined(env, &value);
   if (status != napi_ok) NAPI_THROW_ERROR("Failed to retrieve undefined in nop.");
   return value;
+}
+
+napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDeckLinkDisplayMode *displayMode, napi_value *result) {
+  napi_status status;
+  HRESULT hresult;
+  #if defined(WIN32) || defined(__APPLE__)
+  char modeName[64];
+  #else
+  char * modeName;
+  #endif
+  long modeWidth;
+  long modeHeight;
+  BMDTimeValue frameRateDuration;
+  BMDTimeScale frameRateScale;
+  napi_value modes, modeobj, item, itemPart;
+  uint32_t modeIndex = 0, partIndex = 0;
+  int	pixelFormatIndex = 0; // index into the gKnownPixelFormats / gKnownFormatNames arrays
+  BMDDisplayModeSupport	displayModeSupport;
+
+  status = napi_create_object(env, &modeobj);
+  CHECK_BAIL;
+
+  #ifdef WIN32
+  BSTR			displayModeBSTR = NULL;
+  hresult = displayMode->GetName(&displayModeBSTR);
+  if (hresult == S_OK)
+  {
+    _bstr_t	modeNameWin(displayModeBSTR, false);
+    strcpy(modeName, (const char*) modeNameWin);
+  }
+  #elif __APPLE__
+  CFStringRef	displayModeCFString = NULL;
+  hresult = displayMode->GetName(&displayModeCFString);
+  if (hresult == S_OK) {
+    CFStringGetCString(displayModeCFString, modeName, sizeof(modeName), kCFStringEncodingMacRoman);
+    CFRelease(displayModeCFString);
+  }
+  #else
+  hresult = displayMode->GetName((const char **) &modeName);
+  #endif
+
+  status = napi_create_string_utf8(env, modeName, NAPI_AUTO_LENGTH, &item);
+  CHECK_BAIL;
+  status = napi_set_named_property(env, modeobj, "name", item);
+  CHECK_BAIL;
+
+  modeWidth = displayMode->GetWidth();
+  status = napi_create_int64(env, modeWidth, &item);
+  CHECK_BAIL;
+  status = napi_set_named_property(env, modeobj, "width", item);
+  CHECK_BAIL;
+
+  modeHeight = displayMode->GetHeight();
+  status = napi_create_int64(env, modeHeight, &item);
+  CHECK_BAIL;
+  status = napi_set_named_property(env, modeobj, "height", item);
+  CHECK_BAIL;
+
+  napi_value param;
+
+  BMDDisplayMode displayModeID = displayMode->GetDisplayMode();
+  BMDDisplayModeFlags displayModeFlags = displayMode->GetFlags();
+  napi_create_int64(env, displayModeID, &param);
+  napi_set_named_property(env, modeobj, "displayMode", param);
+  napi_create_int64(env, displayModeFlags, &param);
+  napi_set_named_property(env, modeobj, "displayModeFlags", param);
+
+  BMDFieldDominance fieldDominance = displayMode->GetFieldDominance();
+  status = napi_create_int64(env, modeHeight, &item);
+  CHECK_BAIL;
+  status = napi_set_named_property(env, modeobj, "fieldDominance", item);
+  CHECK_BAIL;
+
+  displayMode->GetFrameRate(&frameRateDuration, &frameRateScale);
+  // printf(" %-20s \t %d x %d \t %7g FPS\t", displayModeString, modeWidth, modeHeight, (double)frameRateScale / (double)frameRateDuration);
+  status = napi_create_array(env, &item);
+  CHECK_BAIL;
+  status = napi_create_int64(env, frameRateDuration, &itemPart);
+  CHECK_BAIL;
+  status = napi_set_element(env, item, 0, itemPart);
+  CHECK_BAIL;
+  status = napi_create_int64(env, frameRateScale, &itemPart);
+  CHECK_BAIL;
+  status = napi_set_element(env, item, 1, itemPart);
+  CHECK_BAIL;
+  status = napi_set_named_property(env, modeobj, "frameRate", item);
+  CHECK_BAIL;
+
+  status = napi_create_array(env, &item);
+  CHECK_BAIL;
+
+  partIndex = 0;
+  pixelFormatIndex = 0;
+
+  if (deckLinkIO != nullptr) {
+    while ((gKnownPixelFormats[pixelFormatIndex] != 0) &&
+        (gKnownPixelFormatNames[pixelFormatIndex] != NULL)) {
+      if ((deckLinkIO->DoesSupportVideoMode(
+        displayMode->GetDisplayMode(), gKnownPixelFormats[pixelFormatIndex],
+        bmdVideoOutputFlagDefault, &displayModeSupport, NULL) == S_OK)
+          && (displayModeSupport != bmdDisplayModeNotSupported)) {
+
+        status = napi_create_string_utf8(env, gKnownPixelFormatNames[pixelFormatIndex],
+          NAPI_AUTO_LENGTH, &itemPart);
+        CHECK_BAIL;
+        status = napi_set_element(env, item, partIndex++, itemPart);
+        CHECK_BAIL;
+      }
+
+      pixelFormatIndex++;
+    }
+  }
+
+  status = napi_set_named_property(env, modeobj, "videoModes", item);
+  CHECK_BAIL;
+
+  *result = modeobj;
+
+  return napi_ok;
+  
+  bail:
+    return napi_generic_failure;
 }

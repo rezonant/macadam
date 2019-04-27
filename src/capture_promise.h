@@ -60,6 +60,8 @@
 napi_value capture(napi_env env, napi_callback_info info);
 napi_value framePromise(napi_env env, napi_callback_info info);
 napi_value stopStreams(napi_env env, napi_callback_info info);
+
+void videoFormatChangeResolver(napi_env env, napi_value func, void *context, void *data);
 void frameResolver(napi_env env, napi_value jsCb, void* context, void* data);
 void captureTsFnFinalize(napi_env env, void* data, void* hint);
 
@@ -69,8 +71,13 @@ struct captureCarrier : carrier {
   uint32_t deviceIndex = 0;
   BMDDisplayMode requestedDisplayMode;
   BMDPixelFormat requestedPixelFormat;
+  BMDVideoInputFlags requestedVideoInputFlags;
   BMDAudioSampleRate requestedSampleRate = bmdAudioSampleRate48kHz;
   BMDAudioSampleType requestedSampleType = bmdAudioSampleType16bitInteger;
+
+  bool hasVideoInputChangedCallback;
+  napi_ref onVideoInputChangedCallback;
+
   uint32_t channels = 0; // Set to zero for no channels
   IDeckLinkDisplayMode* selectedDisplayMode = nullptr;
   ~captureCarrier() {
@@ -83,6 +90,12 @@ struct frameCarrier : carrier {
   ~frameCarrier() { }
 };
 
+struct VideoInputFormatChange {
+  BMDVideoInputFormatChangedEvents notificationEvents;
+  IDeckLinkDisplayMode *newDisplayMode;
+  BMDDetectedVideoInputFormatFlags detectedSignalFlags;
+};
+
 struct captureThreadsafe : IDeckLinkInputCallback {
   HRESULT VideoInputFrameArrived(IDeckLinkVideoInputFrame *videoFrame, IDeckLinkAudioInputPacket *audioPacket);
   HRESULT VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
@@ -92,6 +105,8 @@ struct captureThreadsafe : IDeckLinkInputCallback {
   ULONG AddRef() { return 1; }
   ULONG Release() { return 1; }
   napi_threadsafe_function tsFn;
+  bool hasVideoInputFormatChangedCallback;
+  napi_threadsafe_function onVideoInputFormatChangedCallback;
   bool started = false;
   IDeckLinkInput* deckLinkInput = nullptr;
   IDeckLinkDisplayMode* displayMode = nullptr;
