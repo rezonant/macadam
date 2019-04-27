@@ -40,6 +40,7 @@
  ** -LICENSE-END-
  */
 
+#include <inttypes.h>
 #include "capture_promise.h"
 
 HRESULT captureThreadsafe::VideoInputFrameArrived(
@@ -78,12 +79,45 @@ HRESULT captureThreadsafe::VideoInputFormatChanged(
   BMDVideoInputFormatChangedEvents notificationEvents,
   IDeckLinkDisplayMode *newDisplayMode,
   BMDDetectedVideoInputFormatFlags detectedSignalFlags) {
+  
+  if (hasVideoInputFormatChangedCallback) {
+    napi_status status, hangover;
+    status = napi_acquire_threadsafe_function(onVideoInputFormatChangedCallback);
+    if (status != napi_ok) {
+      printf("DEBUG: Failed to acquire NAPI threadsafe function on format-change, status=%d.\n", status);
+      return E_FAIL;
+    }
+    
+    VideoInputFormatChange *change = new VideoInputFormatChange();
 
-  return E_FAIL;
+    change->notificationEvents = notificationEvents;
+    change->newDisplayMode = newDisplayMode;
+    change->detectedSignalFlags = detectedSignalFlags;
+
+    change->newDisplayMode->AddRef();
+
+    hangover = napi_call_threadsafe_function(onVideoInputFormatChangedCallback, (void*)change, napi_tsfn_nonblocking);
+    if (hangover != napi_ok) {
+      if (hangover == napi_queue_full)
+        printf("WARNING: onVideoInputFormatChanged overrun: Dropped event as event queue is full! status=%d.\n", hangover);
+      else
+        printf("DEBUG: Failed to call NAPI threadsafe function on format-change, status=%d.\n", hangover);
+    }
+
+    status = napi_release_threadsafe_function(onVideoInputFormatChangedCallback, napi_tsfn_release);
+    if (status != napi_ok) {
+      
+      change->newDisplayMode->Release();
+      printf("DEBUG: Failed to release NAPI threadsafe function on format-change, status=%d.\n", status);
+      return E_FAIL;
+    }
+    return (hangover == napi_ok) ? S_OK : E_FAIL;
+  }
+  
+  return S_OK;
 }
 
 void finalizeCaptureCarrier(napi_env env, void* finalize_data, void* finalize_hint) {
-  // printf("Finalizing capture threadsafe.\n");
   captureThreadsafe* c = (captureThreadsafe*) finalize_data;
   delete c;
 }
@@ -106,7 +140,6 @@ void finalizeAudioPacket(napi_env env, void* finalize_data, void* finalize_hint)
   status = napi_adjust_external_memory(env, -((int64_t) audio->dataSize), &externalMemory);
   FLOATING_STATUS;
   audio->audioPacket->Release();
-  // printf("Releasing audio packet - ext mem now %li\n", externalMemory);
   free(audio);
 }
 
@@ -211,7 +244,7 @@ void captureExecute(napi_env env, void* data) {
   BMDDisplayModeSupport supported;
 
   hresult = deckLinkInput->DoesSupportVideoMode(c->requestedDisplayMode,
-    c->requestedPixelFormat, bmdVideoInputFlagDefault,
+    c->requestedPixelFormat, c->requestedVideoInputFlags,
     &supported, &c->selectedDisplayMode);
   if (hresult != S_OK) {
     c->status = MACADAM_CALL_FAILURE;
@@ -222,7 +255,7 @@ void captureExecute(napi_env env, void* data) {
     case bmdDisplayModeSupported:
       break;
     case bmdDisplayModeSupportedWithConversion:
-      c->status = MACADAM_NO_CONVERESION;
+      c->status = MACADAM_NO_CONVERSION;
       c->errorMsg = "Display mode is supported via conversion and not by macadam.";
       return;
     default:
@@ -232,7 +265,7 @@ void captureExecute(napi_env env, void* data) {
   }
 
   hresult = deckLinkInput->EnableVideoInput(c->requestedDisplayMode,
-    c->requestedPixelFormat, bmdVideoInputFlagDefault);
+    c->requestedPixelFormat, c->requestedVideoInputFlags);
   switch (hresult) {
     case E_INVALIDARG: // Should have been picked up by DoesSupportVideoMode
       c->status = MACADAM_INVALID_ARGS;
@@ -452,6 +485,19 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
     20, 1, nullptr, captureTsFnFinalize, crts, frameResolver, &crts->tsFn);
   REJECT_STATUS;
 
+  // Set up onVideoInputFormatChanged callback
+  
+  if (c->hasVideoInputChangedCallback) {
+    c->status = napi_get_reference_value(env, c->onVideoInputChangedCallback, &param);                    REJECT_STATUS;
+    c->status = napi_reference_unref(env, c->onVideoInputChangedCallback, nullptr);                       REJECT_STATUS;
+    c->status = napi_create_string_utf8(env, "onVideoInputFormatChanged", NAPI_AUTO_LENGTH, &asyncName);  REJECT_STATUS;
+    c->status = napi_create_threadsafe_function(
+      env, param, nullptr, asyncName, 20, 1, nullptr, nullptr, 
+      crts, videoFormatChangeResolver, 
+      &crts->onVideoInputFormatChangedCallback);                                                          REJECT_STATUS;
+    crts->hasVideoInputFormatChangedCallback = true;
+  }
+
   c->status = napi_create_external(env, crts, finalizeCaptureCarrier, nullptr, &param);
   REJECT_STATUS;
   c->status = napi_set_named_property(env, result, "deckLinkInput", param);
@@ -475,6 +521,8 @@ napi_value capture(napi_env env, napi_callback_info info) {
 
   c->requestedDisplayMode = bmdModeHD1080i50;
   c->requestedPixelFormat = bmdFormat10BitYUV;
+  c->requestedVideoInputFlags = bmdVideoInputFlagDefault;
+
   size_t argc = 1;
   napi_value args[1];
   c->status = napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
@@ -506,6 +554,23 @@ napi_value capture(napi_env env, napi_callback_info info) {
     REJECT_RETURN;
   }
 
+  // onVideoInputFormatChanged
+
+  c->status = napi_get_named_property(env, options, "onVideoInputFormatChanged", &param);
+  REJECT_RETURN;
+  c->status = napi_typeof(env, param, &type);
+  REJECT_RETURN;
+
+  if (type != napi_undefined) {
+    if (type != napi_function) REJECT_ERROR_RETURN(
+      "onVideoInputFormatChanged() must be function", MACADAM_INVALID_ARGS);
+
+    c->hasVideoInputChangedCallback = true;
+    napi_create_reference(env, param, 1, &c->onVideoInputChangedCallback);
+  } else {
+    c->hasVideoInputChangedCallback = false;
+  }
+
   c->status = napi_get_named_property(env, options, "displayMode", &param);
   REJECT_RETURN;
   c->status = napi_typeof(env, param, &type);
@@ -525,6 +590,19 @@ napi_value capture(napi_env env, napi_callback_info info) {
     if (type != napi_number) REJECT_ERROR_RETURN(
       "Pixel format must be an enumeration value.", MACADAM_INVALID_ARGS);
     c->status = napi_get_value_uint32(env, param, (uint32_t *) &c->requestedPixelFormat);
+    REJECT_RETURN;
+  }
+
+  c->status = napi_get_named_property(env, options, "videoInputFlags", &param);
+  REJECT_RETURN;
+  c->status = napi_typeof(env, param, &type);
+  REJECT_RETURN;
+  if (type != napi_undefined) {
+    if (type != napi_number) REJECT_ERROR_RETURN(
+      "Video input flags must be an enumeration value.", MACADAM_INVALID_ARGS);
+      
+    c->status = napi_get_value_uint32(env, param, (uint32_t *) &c->requestedVideoInputFlags);
+  
     REJECT_RETURN;
   }
 
@@ -613,6 +691,59 @@ napi_value framePromise(napi_env env, napi_callback_info info) {
   crts->framePromises.push(c);
 
   return promise;
+}
+
+void videoFormatChangeResolver(napi_env env, napi_value func, void *context, void *data) {
+  VideoInputFormatChange *formatChangeEvent = (VideoInputFormatChange*)data;
+  BMDVideoInputFormatChangedEvents notificationEvents = formatChangeEvent->notificationEvents;
+  IDeckLinkDisplayMode *newDisplayMode = formatChangeEvent->newDisplayMode;
+  BMDDetectedVideoInputFormatFlags detectedSignalFlags = formatChangeEvent->detectedSignalFlags;
+  delete formatChangeEvent;
+
+  HRESULT hresult;
+
+  // Create the event object
+
+  napi_value node_event, param;
+
+  if (napi_create_object(env, &node_event) != napi_ok) {
+    printf("DEBUG: Failed to create object while preparing format-change event");
+    newDisplayMode->Release();
+    return;
+  };
+
+  // event.notificationEvents
+
+  napi_create_int64(env, notificationEvents, &param);
+  napi_set_named_property(env, node_event, "notificationEvents", param);
+
+  // event.newDisplayMode 
+
+  napi_value node_display_mode;
+  serializeDisplayMode(env, nullptr, newDisplayMode, &node_display_mode);
+  napi_set_named_property(env, node_event, "newDisplayMode", node_display_mode);
+  newDisplayMode->Release();
+  newDisplayMode = nullptr;
+
+  // event.detectedSignalFlags
+
+  napi_create_int64(env, detectedSignalFlags, &param);
+  napi_set_named_property(env, node_event, "detectedSignalFlags", param);
+
+  // Call the function
+  // Obtain a reference to undefined to use as the receiver (this) of the 
+  // function call
+
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) == napi_ok) {
+    napi_value result;
+    napi_status call_result;
+    call_result = napi_call_function(env, undefined, func, 1, &node_event, &result);
+
+    if (call_result != napi_ok) {
+      printf("DEBUG: Error while calling onVideoFormatChange: status=%d", call_result);
+    }
+  }
 }
 
 void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
