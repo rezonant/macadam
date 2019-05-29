@@ -72,6 +72,7 @@ struct captureCarrier : carrier {
   BMDDisplayMode requestedDisplayMode;
   BMDPixelFormat requestedPixelFormat;
   BMDVideoInputFlags requestedVideoInputFlags;
+  bool outputRGBA;
   BMDAudioSampleRate requestedSampleRate = bmdAudioSampleRate48kHz;
   BMDAudioSampleType requestedSampleType = bmdAudioSampleType16bitInteger;
 
@@ -111,6 +112,11 @@ struct captureThreadsafe : IDeckLinkInputCallback {
   IDeckLinkInput* deckLinkInput = nullptr;
   IDeckLinkDisplayMode* displayMode = nullptr;
   BMDPixelFormat pixelFormat;
+  bool outputRGBA;
+  IDeckLinkVideoFrame *convertedFrame = nullptr;
+
+  IDeckLinkVideoConversion *deckLinkConversion;
+  
   BMDTimeScale timeScale;
   uint16_t roughFps = 25; // Used for timecode formatting
   BMDAudioSampleRate sampleRate;
@@ -121,11 +127,13 @@ struct captureThreadsafe : IDeckLinkInputCallback {
   ~captureThreadsafe() {
     if (deckLinkInput != nullptr) { deckLinkInput->Release(); }
     if (displayMode != nullptr) { displayMode->Release(); }
+    if (convertedFrame != nullptr) { convertedFrame->Release(); }
   }
 };
 
 struct frameData {
   IDeckLinkVideoInputFrame* videoFrame;
+  IDeckLinkVideoFrame* convertedFrame;
   IDeckLinkAudioInputPacket* audioPacket;
   byte* rgbaAuxiliaryBuf;
 };

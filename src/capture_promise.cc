@@ -42,6 +42,7 @@
 
 #include <inttypes.h>
 #include "capture_promise.h"
+#include "converted_frame.h"
 
 HRESULT captureThreadsafe::VideoInputFrameArrived(
   IDeckLinkVideoInputFrame *videoFrame,
@@ -63,6 +64,7 @@ HRESULT captureThreadsafe::VideoInputFrameArrived(
   data->rgbaAuxiliaryBuf = nullptr;
   data->videoFrame = videoFrame;
   data->audioPacket = audioPacket;
+  data->convertedFrame = nullptr;
 
   hangover = napi_call_threadsafe_function(tsFn, data, napi_tsfn_nonblocking);
   if (hangover != napi_ok) {
@@ -132,12 +134,25 @@ void finalizeVideoBuffer(napi_env env, void* finalize_data, void* finalize_hint)
   napi_status status;
   int64_t externalMemory;
   frameData *frame = (frameData*) finalize_hint;
-  IDeckLinkVideoInputFrame* video = frame->videoFrame;
-  status = napi_adjust_external_memory(env, -video->GetRowBytes()*video->GetHeight(),
-    &externalMemory);
-  FLOATING_STATUS;
-  video->Release();
 
+  if (frame->convertedFrame) {
+    IDeckLinkVideoFrame* video = frame->convertedFrame;
+    status = napi_adjust_external_memory(env, -video->GetRowBytes()*video->GetHeight(),
+      &externalMemory);
+    FLOATING_STATUS;
+    video->Release();
+    frame->convertedFrame = nullptr;
+  }
+  
+  if (frame->videoFrame) {
+    IDeckLinkVideoInputFrame* video = frame->videoFrame;
+    status = napi_adjust_external_memory(env, -video->GetRowBytes()*video->GetHeight(),
+      &externalMemory);
+    FLOATING_STATUS;
+    video->Release();
+    frame->videoFrame = nullptr;
+  }
+  
   if (frame->rgbaAuxiliaryBuf) {
     free(frame->rgbaAuxiliaryBuf);
     frame->rgbaAuxiliaryBuf = NULL;
@@ -477,6 +492,20 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
   c->selectedDisplayMode = nullptr;
   crts->timeScale = frameRateScale;
   crts->pixelFormat = c->requestedPixelFormat;
+  crts->outputRGBA = c->outputRGBA;
+
+  crts->deckLinkConversion = nullptr;
+  #ifdef WIN32
+  hresult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  CoCreateInstance(CLSID_CDeckLinkVideoConversion, NULL, CLSCTX_ALL, IID_IDeckLinkVideoConversion, (void**)&crts->deckLinkConversion);
+  #else
+  crts->deckLinkConversion = CreateDeckLinkVideoConversion();
+  #endif
+
+  if (!crts->deckLinkConversion) {
+    printf("ERROR: Failed to initialize DeckLink video conversion interface\n");
+  }
+
   crts->roughFps = (uint16_t) (frameRateScale / frameRateDuration); // Used for timecode formatting
   crts->channels = c->channels;
   if (c->channels > 0) {
@@ -586,6 +615,9 @@ napi_value capture(napi_env env, napi_callback_info info) {
     c->hasVideoInputChangedCallback = false;
   }
 
+  /**
+   * Display Mode (input resolution)
+   */
   c->status = napi_get_named_property(env, options, "displayMode", &param);
   REJECT_RETURN;
   c->status = napi_typeof(env, param, &type);
@@ -597,6 +629,25 @@ napi_value capture(napi_env env, napi_callback_info info) {
     REJECT_RETURN;
   }
 
+  /**
+   * Output RGBA (useful for HTML5 canvas)
+   */
+  c->status = napi_get_named_property(env, options, "outputRGBA", &param);
+  REJECT_RETURN;
+  c->status = napi_typeof(env, param, &type);
+  REJECT_RETURN;
+  if (type != napi_undefined) {
+    if (type != napi_boolean) REJECT_ERROR_RETURN(
+      "outputRGBA must be a boolean.", MACADAM_INVALID_ARGS);
+    c->status = napi_get_value_bool(env, param, (bool *) &c->outputRGBA);
+    REJECT_RETURN;
+  } else {
+    c->outputRGBA = false;
+  }
+
+  /**
+   * Pixel Format
+   */
   c->status = napi_get_named_property(env, options, "pixelFormat", &param);
   REJECT_RETURN;
   c->status = napi_typeof(env, param, &type);
@@ -878,58 +929,52 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
     }
 
     // Convert the color format
-
     int32_t bufferSize = rowBytes * height;
+    BMDPixelFormat outputFormat = crts->pixelFormat;
 
-    if (crts->pixelFormat == bmdFormat8BitBGRA) {
-      byte *rawData = (byte*)bytes;
-      for (int i = 0, max = bufferSize; i < max; i += 4) {
-        byte blue = rawData[i];
-        rawData[i + 0]     = rawData[i + 2];
-        rawData[i + 2]     = blue;
-        rawData[i + 3] = 255;
-      }
-    } else if (crts->pixelFormat == bmdFormat8BitARGB) {
-      byte *rawData = (byte*)bytes;
-      for (int i = 0, max = bufferSize; i < max; i += 4) {
-        //byte alpha = rawData[i];
-        rawData[i + 0]     = rawData[i + 1];
-        rawData[i + 1]     = rawData[i + 2];
-        rawData[i + 2]     = rawData[i + 3];
-        rawData[i + 3]     = 255;
-      }
-    } else if (crts->pixelFormat == bmdFormat8BitYUV) {
-      byte *rawData = (byte*)bytes;
-      byte *rgbaData = (byte*)malloc(frame->videoFrame->GetWidth() * frame->videoFrame->GetHeight() * 4);
+    if (crts->outputRGBA) {
+      if (outputFormat == bmdFormat8BitARGB || outputFormat == bmdFormat8BitYUV) {
 
-      for (int i = 0, max = bufferSize; i < max; i += 4) {
-        byte Cb = rawData[i + 0];
-        byte Y0 = rawData[i + 1];
-        byte Cr = rawData[i + 2];
-        byte Y1 = rawData[i + 3];
+        ConvertedVideoFrame *convertedFrame = new ConvertedVideoFrame(
+          frame->videoFrame->GetWidth(), 
+          frame->videoFrame->GetHeight(), 
+          bmdFormat8BitBGRA, 
+          4 * frame->videoFrame->GetWidth()
+        );
 
-        int R0 = (int) (Y0 + 1.40200 * (Cr - 0x80));
-        int G0 = (int) (Y0 - 0.34414 * (Cb - 0x80) - 0.71414 * (Cr - 0x80));
-        int B0 = (int) (Y0 + 1.77200 * (Cb - 0x80));
+        HRESULT result = crts->deckLinkConversion->ConvertFrame(frame->videoFrame, convertedFrame);
 
-        int R1 = (int) (Y1 + 1.40200 * (Cr - 0x80));
-        int G1 = (int) (Y1 - 0.34414 * (Cb - 0x80) - 0.71414 * (Cr - 0x80));
-        int B1 = (int) (Y1 + 1.77200 * (Cb - 0x80));
+        if (result == E_FAIL) {
+          printf("Failed to convert frame from YUV to BGRA (E_FAIL)\n");
+        } else if (result == E_NOTIMPL) {
+          printf("Failed to convert frame from YUV to BGRA (E_NOTIMPL)\n");
+        } else if (result == E_OUTOFMEMORY) {
+          printf("Failed to convert frame from YUV to BGRA (E_OUTOFMEMORY)\n");
+        }
 
-        int rgbaIndex = i * 2;
-        rgbaData[rgbaIndex + 0] = R0;
-        rgbaData[rgbaIndex + 1] = G0;
-        rgbaData[rgbaIndex + 2] = B0;
-        rgbaData[rgbaIndex + 3] = 255;
-        rgbaData[rgbaIndex + 4] = R1;
-        rgbaData[rgbaIndex + 5] = G1;
-        rgbaData[rgbaIndex + 6] = B1;
-        rgbaData[rgbaIndex + 7] = 255;
+        if (result == S_OK) {
+          frame->convertedFrame = convertedFrame;
+        } else {
+          delete convertedFrame;
+        }
+
+        // Assign
+
+        outputFormat = bmdFormat8BitBGRA;
+        convertedFrame->GetBytes(&bytes);
+        rowBytes = convertedFrame->GetRowBytes();
+        bufferSize = rowBytes * frame->videoFrame->GetHeight();
       }
 
-      bytes = rgbaData;
-      bufferSize = frame->videoFrame->GetWidth() * 4;
-      frame->rgbaAuxiliaryBuf = rgbaData;
+      if (outputFormat == bmdFormat8BitBGRA) {
+        byte *rawData = (byte*)bytes;
+        for (int i = 0, max = bufferSize; i < max; i += 4) {
+          byte blue = rawData[i];
+          rawData[i + 0]     = rawData[i + 2];
+          rawData[i + 2]     = blue;
+          rawData[i + 3] = 255;
+        }
+      }
     }
 
     c->status = napi_create_external_buffer(env, bufferSize, bytes,
