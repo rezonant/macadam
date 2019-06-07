@@ -185,6 +185,9 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
   uint32_t modeIndex = 0, partIndex = 0;
   int	pixelFormatIndex = 0; // index into the gKnownPixelFormats / gKnownFormatNames arrays
   BMDDisplayModeSupport	displayModeSupport;
+  BMDFieldDominance fieldDominance;
+  BMDDisplayMode displayModeID;
+  BMDDisplayModeFlags displayModeFlags;
 
   status = napi_create_object(env, &modeobj);
   CHECK_BAIL;
@@ -227,14 +230,14 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
 
   napi_value param;
 
-  BMDDisplayMode displayModeID = displayMode->GetDisplayMode();
-  BMDDisplayModeFlags displayModeFlags = displayMode->GetFlags();
+  displayModeID = displayMode->GetDisplayMode();
+  displayModeFlags = displayMode->GetFlags();
   napi_create_int64(env, displayModeID, &param);
   napi_set_named_property(env, modeobj, "displayMode", param);
   napi_create_int64(env, displayModeFlags, &param);
   napi_set_named_property(env, modeobj, "displayModeFlags", param);
 
-  BMDFieldDominance fieldDominance = displayMode->GetFieldDominance();
+  fieldDominance = displayMode->GetFieldDominance();
   status = napi_create_int64(env, modeHeight, &item);
   CHECK_BAIL;
   status = napi_set_named_property(env, modeobj, "fieldDominance", item);
