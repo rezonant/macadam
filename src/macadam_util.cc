@@ -177,6 +177,13 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
   #else
   char * modeName;
   #endif
+
+  #ifdef WIN32
+  BSTR			displayModeBSTR = NULL;
+  #elif __APPLE__
+  CFStringRef	displayModeCFString = NULL;
+  #endif
+
   long modeWidth;
   long modeHeight;
   BMDTimeValue frameRateDuration;
@@ -193,7 +200,6 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
   CHECK_BAIL;
 
   #ifdef WIN32
-  BSTR			displayModeBSTR = NULL;
   hresult = displayMode->GetName(&displayModeBSTR);
   if (hresult == S_OK)
   {
@@ -201,7 +207,6 @@ napi_status serializeDisplayMode(napi_env env, IDeckLinkOutput *deckLinkIO, IDec
     strcpy(modeName, (const char*) modeNameWin);
   }
   #elif __APPLE__
-  CFStringRef	displayModeCFString = NULL;
   hresult = displayMode->GetName(&displayModeCFString);
   if (hresult == S_OK) {
     CFStringGetCString(displayModeCFString, modeName, sizeof(modeName), kCFStringEncodingMacRoman);
