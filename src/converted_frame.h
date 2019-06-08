@@ -1,12 +1,13 @@
+#include <inttypes.h>
 #include "DeckLinkAPI.h"
 
 class ConvertedVideoFrame : public IDeckLinkVideoFrame {
-    byte *data;
+    uint8_t *data;
     long width;
     long height;
     long rowSize;
     BMDPixelFormat pixelFormat;
-    LONG referenceCount = 1;
+    long referenceCount = 1;
 
     public:
         ConvertedVideoFrame(long width, long height, BMDPixelFormat pixelFormat, long rowSize);

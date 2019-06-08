@@ -499,7 +499,7 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
   hresult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   CoCreateInstance(CLSID_CDeckLinkVideoConversion, NULL, CLSCTX_ALL, IID_IDeckLinkVideoConversion, (void**)&crts->deckLinkConversion);
   #else
-  crts->deckLinkConversion = CreateDeckLinkVideoConversion();
+  crts->deckLinkConversion = CreateVideoConversionInstance();
   #endif
 
   if (!crts->deckLinkConversion) {
@@ -967,9 +967,9 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
       }
 
       if (outputFormat == bmdFormat8BitBGRA) {
-        byte *rawData = (byte*)bytes;
+        uint8_t *rawData = (uint8_t*)bytes;
         for (int i = 0, max = bufferSize; i < max; i += 4) {
-          byte blue = rawData[i];
+          uint8_t blue = rawData[i];
           rawData[i + 0]     = rawData[i + 2];
           rawData[i + 2]     = blue;
           rawData[i + 3] = 255;
