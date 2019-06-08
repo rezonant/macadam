@@ -1,7 +1,7 @@
 #include "DeckLinkAPI.h"
 #include <assert.h>
 #include "converted_frame.h"
-#include <malloc.h>
+#include <stdlib.h>
 #include <memory.h>
 
 ConvertedVideoFrame::ConvertedVideoFrame(long width, long height, BMDPixelFormat pixelFormat, long rowSize) {
