@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <memory.h>
 
+#if __APPLE__
+#   define IID_IUnknown		(REFIID){0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}
+#   define IUnknownUUID		IID_IUnknown
+#endif
+
 ConvertedVideoFrame::ConvertedVideoFrame(long width, long height, BMDPixelFormat pixelFormat, long rowSize) {
     this->data = (uint8_t*)malloc(rowSize * height);
     this->width = width;
