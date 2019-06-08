@@ -120,7 +120,7 @@ struct frameData {
   IDeckLinkVideoInputFrame* videoFrame;
   IDeckLinkVideoFrame* convertedFrame;
   IDeckLinkAudioInputPacket* audioPacket;
-  byte* rgbaAuxiliaryBuf;
+  uint8_t* rgbaAuxiliaryBuf;
 };
 
 struct audioData {

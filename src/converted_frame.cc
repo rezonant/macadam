@@ -1,9 +1,11 @@
 #include "DeckLinkAPI.h"
 #include <assert.h>
 #include "converted_frame.h"
+#include <malloc.h>
+#include <memory.h>
 
 ConvertedVideoFrame::ConvertedVideoFrame(long width, long height, BMDPixelFormat pixelFormat, long rowSize) {
-    this->data = (byte*)malloc(rowSize * height);
+    this->data = (uint8_t*)malloc(rowSize * height);
     this->width = width;
     this->height = height;
     this->pixelFormat = pixelFormat;
@@ -65,18 +67,27 @@ HRESULT ConvertedVideoFrame::QueryInterface (
     
     *ppvObj = NULL;
 
-    if (riid == IID_IUnknown) {
+    REFIID IUnknown = IID_IUnknown;
+
+    if (0 == memcmp(&riid, &IUnknown, sizeof(REFIID))) {
         // Increment the reference count and return the pointer.
         *ppvObj = (LPVOID)this;
         AddRef();
-        return NOERROR;
+        return S_OK;
     }
 
     return E_NOINTERFACE;
 }
 
 ULONG ConvertedVideoFrame::Release() {
-    ULONG ulRefCount = InterlockedDecrement(&referenceCount);
+    ULONG ulRefCount;
+    
+    #ifdef WIN32
+    ulRefCount = InterlockedDecrement(&referenceCount);
+    #else
+    ulRefCount = __sync_fetch_and_sub(&referenceCount, 1);
+    #endif
+
     if (ulRefCount == 0)
         delete this;
 
@@ -84,6 +95,11 @@ ULONG ConvertedVideoFrame::Release() {
 }
 
 ULONG ConvertedVideoFrame::AddRef() {
+    #ifdef WIN32
     InterlockedIncrement(&referenceCount);
+    #else 
+    __sync_add_and_fetch(&referenceCount, 1);
+    #endif
+
     return referenceCount;
 }
