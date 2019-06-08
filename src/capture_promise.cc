@@ -342,6 +342,14 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
   BMDTimeScale frameRateScale;
   HRESULT hresult;
 
+  #ifdef WIN32
+  BSTR displayModeBSTR = NULL;
+  #elif __APPLE__
+  CFStringRef displayModeCFString = nullptr;
+  #else
+  char* displayModeName = nullptr;
+  #endif
+
   if (asyncStatus != napi_ok) {
     c->status = asyncStatus;
     c->errorMsg = "Async capture creator failed to complete.";
@@ -356,7 +364,6 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
   REJECT_STATUS;
 
   #ifdef WIN32
-  BSTR displayModeBSTR = NULL;
   hresult = c->selectedDisplayMode->GetName(&displayModeBSTR);
   if (hresult == S_OK) {
     _bstr_t deviceName(displayModeBSTR, false);
@@ -364,7 +371,6 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
     REJECT_STATUS;
   }
   #elif __APPLE__
-  CFStringRef displayModeCFString = NULL;
   hresult = c->selectedDisplayMode->GetName(&displayModeCFString);
   if (hresult == S_OK) {
     char displayModeName[64];
@@ -374,7 +380,6 @@ void captureComplete(napi_env env, napi_status asyncStatus, void* data) {
     REJECT_STATUS;
   }
   #else
-  char* displayModeName;
   hresult = c->selectedDisplayMode->GetName((const char **) &displayModeName);
   if (hresult == S_OK) {
     c->status = napi_create_string_utf8(env, displayModeName, NAPI_AUTO_LENGTH, &param);
