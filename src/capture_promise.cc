@@ -653,7 +653,7 @@ void frameResolver(napi_env env, napi_value jsCb, void* context, void* data) {
         while (iterator->Next(&packet) == S_OK) {
           napi_value js_packet, line_number, did, data_stream_index, sdid, packet_data;
           unsigned int packetSize;
-          byte *packetData;
+          uint8_t *packetData;
           
           c->status = napi_create_int64(env, packet->GetLineNumber(), &line_number);                  REJECT_BAIL;
           c->status = napi_create_int32(env, packet->GetDID(), &did);                                 REJECT_BAIL;
